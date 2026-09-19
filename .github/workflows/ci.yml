@@ -1,0 +1,138 @@
+name: ci
+
+# CI de la casa: nada se promete que no se corra. Cuatro trabajos:
+#   calidad  → lint + typecheck + los 18 tests del motor + build
+#   e2e      → páginas y API contra el servidor real, Firefox y Chromium
+#   sql      → el camino PostGIS con un PostGIS 18 de verdad + la carrera
+#   pages    → en main: generate estático y deploy a GitHub Pages
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  calidad:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.20.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: preparar (genera .nuxt: tipos y el config de ESLint)
+        run: pnpm exec nuxi prepare
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: servidor-nitro
+          path: .output
+          retention-days: 3
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: calidad
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.20.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps firefox chromium
+      - run: pnpm build
+      - run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-reporte
+          path: playwright-report
+          retention-days: 7
+
+  sql:
+    # El camino de producción contra un PostGIS REAL: esquema, semilla,
+    # matching y la reserva atómica con su carrera y su invariante.
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgis/postgis:18-3.6
+        env:
+          POSTGRES_USER: nitheky
+          POSTGRES_PASSWORD: nitheky
+          POSTGRES_DB: nitheky
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nitheky -d nitheky"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: aplicar esquema, semilla y funciones
+        run: |
+          export PGPASSWORD=nitheky
+          psql -h 127.0.0.1 -U nitheky -d nitheky -v ON_ERROR_STOP=1 -f sql/00_schema.sql
+          psql -h 127.0.0.1 -U nitheky -d nitheky -v ON_ERROR_STOP=1 -f sql/01_seed.sql
+          psql -h 127.0.0.1 -U nitheky -d nitheky -v ON_ERROR_STOP=1 -f sql/02_matching.sql
+          psql -h 127.0.0.1 -U nitheky -d nitheky -v ON_ERROR_STOP=1 -f sql/03_reserva.sql
+      - name: los dos escenarios del encargo (A encuentra 2 · B encuentra 0)
+        run: |
+          export PGPASSWORD=nitheky
+          A=$(psql -h 127.0.0.1 -U nitheky -d nitheky -X -qAt -c \
+              "select count(*) from buscar_conductores(st_point(32.5656,-25.8457), st_point(32.6489,-25.7422), tstzrange('2026-10-01 07:00+00','2026-10-01 08:00+00'), 1, 1500, 3000);")
+          B=$(psql -h 127.0.0.1 -U nitheky -d nitheky -X -qAt -c \
+              "select count(*) from buscar_conductores(st_point(32.5656,-25.8457), st_point(32.5832,-25.9655), tstzrange('2026-10-01 07:00+00','2026-10-01 08:00+00'), 1, 1500, 3000);")
+          echo "escenario A → $A conductores (esperado: 2)"
+          echo "escenario B → $B conductores (esperado: 0)"
+          [ "$A" = "2" ] && [ "$B" = "0" ]
+      - name: la carrera por la última plaza, 100 veces
+        run: |
+          export PGPASSWORD=nitheky
+          for i in $(seq 1 100); do
+            psql -h 127.0.0.1 -U nitheky -d nitheky -X -qAt -c \
+              "delete from reservas where conductor_id='drv-tomas'; update conductores set plazas=1 where id='drv-tomas';" >/dev/null
+            sql/carrera.sh >/dev/null || { echo "carrera $i rompió el invariante"; exit 1; }
+          done
+          echo "100 carreras limpias: una plaza, un ganador, cero sobreventas"
+
+  pages:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    needs: [calidad, e2e, sql]
+    permissions:
+      pages: write
+      id-token: write
+      contents: read
+    environment:
+      name: github-pages
+      url: ${{ steps.despliegue.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.20.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: generate estático (con la base /nitheky-proof/)
+        run: NUXT_APP_BASE_URL=/nitheky-proof/ pnpm generate
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .output/public
+      - id: despliegue
+        uses: actions/deploy-pages@v4
