@@ -1,0 +1,35 @@
+   1000 carreras con un ganador · 0 con dos (deben ser 0)
+✔ la última plaza se vende UNA vez en 1000 carreras simultáneas (2906.748084ms)
+✔ tres pasajeros, dos plazas: entran dos y solo dos (5.157383ms)
+✔ una reserva de 2 plazas contra 1 libre se rechaza entera (sin vender media) (1.765035ms)
+   ranking A: drv-amelia 91.4% · drv-tomas 82.6%
+   recogida frac 0.526 ≥ destino frac 0.000 → hacia atrás
+   Maputo→Zimpeto 13.44 km (recto)
+   Zimpeto→Marracuene 14.21 km (recto)
+   Maputo→Marracuene 25.69 km (recto)
+✔ la ruta existe y mide lo que tiene que medir (0.866479ms)
+✔ Zimpeto cae en la mitad de la ruta (fracción ~0.53) (0.323459ms)
+✔ ESCENARIO A · Zimpeto→Marracuene ENCUENTRA conductores (2.695507ms)
+✔ ESCENARIO B · Zimpeto→Maputo se RECHAZA por dirección opuesta (0.598797ms)
+✔ ninguna parte del motor sabe en qué país está (1.468733ms)
+✔ distancias de referencia (para contrastar con el SQL) (0.243063ms)
+   recogida a 2865 m de la ruta; el corredor es 1500 m
+   desvío medido: 2.48 km · score 51.4%
+   orden: drv-amelia 91.4% · drv-tomas 82.6%
+✔ req 1+2 · la ruta es una polilínea y el corredor se mide contra ella (1.829305ms)
+✔ req 2 · fuera del corredor se rechaza con la distancia exacta (0.88262ms)
+✔ req 3 · recogida y destino invertidos = dirección opuesta (0.175351ms)
+✔ req 4 · misma dirección: la validación es sobre la RUTA, no sobre el punto (0.201612ms)
+✔ req 5 · el desvío es configurable y se mide (0.367435ms)
+✔ req 6 · ventanas que no se tocan se rechazan (0.164453ms)
+✔ req 7 · sin plazas no hay match, y lo dice (0.103962ms)
+✔ req 8 · el ranking ordena por desvío, espera y confianza — y es estable (3.498127ms)
+✔ req 1-9 · NEUTRALIDAD DE PAÍS: Luanda funciona con el mismo código (0.275264ms)
+ℹ tests 18
+ℹ suites 0
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3238.278833
