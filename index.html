@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NITHEKY — same-direction matching · technical proof</title>
+<meta name="description" content="Route-corridor matching proof: Maputo→Marracuene, Zimpeto pickup, direction validation, configurable detour, time windows, seats, ranking, atomic last-seat reservation.">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+  :root{
+    --bg:#0d0e10; --panel:#15171a; --panel2:#1b1e22; --linea:#2a2e34;
+    --texto:#e8e6e1; --apagado:#9a978f; --oro:#d4a017; --oro-suave:#e8c563;
+    --ok:#3fb27f; --mal:#d64545; --azul:#4a90d9;
+    --mono:'JetBrains Mono',ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--texto);
+       font-family:Inter,system-ui,sans-serif;font-size:15px;line-height:1.5}
+  header{padding:28px 32px 20px;border-bottom:1px solid var(--linea);
+         display:flex;flex-wrap:wrap;gap:16px;align-items:baseline;justify-content:space-between}
+  h1{font-size:22px;margin:0;letter-spacing:.5px;font-weight:700}
+  h1 .oro{color:var(--oro)}
+  .tag{color:var(--apagado);font-size:13.5px}
+  .links a{color:var(--oro-suave);text-decoration:none;font-size:13px;margin-left:16px;
+           font-family:var(--mono)}
+  .links a:hover{text-decoration:underline}
+  main{display:grid;grid-template-columns:380px 1fr;gap:0;min-height:calc(100vh - 90px)}
+  @media(max-width:960px){main{grid-template-columns:1fr}}
+  .panel-izq{border-right:1px solid var(--linea);padding:22px 24px;overflow-y:auto}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:1.5px;color:var(--apagado);
+     margin:26px 0 10px;font-weight:600}
+  h2:first-child{margin-top:0}
+  .escenarios{display:flex;flex-direction:column;gap:8px}
+  .esc{display:block;text-align:left;background:var(--panel);color:var(--texto);
+       border:1px solid var(--linea);border-radius:8px;padding:10px 12px;cursor:pointer;
+       font:inherit;font-size:13.5px;transition:border-color .15s}
+  .esc small{display:block;color:var(--apagado);font-size:12px;margin-top:2px}
+  .esc:hover{border-color:var(--oro)}
+  .esc.activo{border-color:var(--oro);background:#241f10}
+  .esc .espera{font-family:var(--mono);font-size:11px;float:right;margin-top:2px}
+  .espera.ok{color:var(--ok);font-weight:700}
+  .espera.mal{color:var(--mal);font-weight:700}
+  .slider{margin:14px 0}
+  .slider label{display:flex;justify-content:space-between;font-size:13px;color:var(--apagado);
+                margin-bottom:6px}
+  .slider label b{color:var(--texto);font-family:var(--mono);font-weight:500}
+  input[type=range]{width:100%;accent-color:var(--oro)}
+  .tabla9{width:100%;border-collapse:collapse;font-size:12.5px}
+  .tabla9 td{padding:7px 8px;border-top:1px solid var(--linea);vertical-align:top}
+  .tabla9 td:first-child{color:var(--apagado);white-space:nowrap;width:118px}
+  .tabla9 .val{font-family:var(--mono);font-size:11.5px}
+  .v{font-family:var(--mono);font-weight:700}
+  .v.ok{color:var(--ok)} .v.mal{color:var(--mal)}
+  #mapa{height:340px;border-radius:10px;border:1px solid var(--linea);z-index:1}
+  .derecha{padding:22px 26px;overflow-y:auto}
+  .tarjeta{background:var(--panel);border:1px solid var(--linea);border-radius:10px;
+           padding:14px 16px;margin-bottom:12px}
+  .tarjeta .fila{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+  .nombre{font-weight:600;font-size:14.5px}
+  .puntos{font-family:var(--mono);font-size:18px;color:var(--oro);font-weight:700}
+  .detalle{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-top:10px}
+  .detalle div{background:var(--panel2);border-radius:6px;padding:6px 8px}
+  .detalle .k{font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:var(--apagado)}
+  .detalle .n{font-family:var(--mono);font-size:13px;margin-top:2px}
+  .rechazo{border-left:3px solid var(--mal);padding:8px 12px;background:#1d1214;
+           border-radius:6px;font-size:13px;margin-bottom:10px}
+  .rechazo b{font-family:var(--mono)}
+  .carrera{margin-top:26px}
+  .btn{background:var(--oro);color:#141414;border:none;border-radius:8px;padding:10px 18px;
+       font:inherit;font-weight:600;cursor:pointer;font-size:14px}
+  .btn:hover{background:var(--oro-suave)}
+  .btn:disabled{opacity:.45;cursor:wait}
+  .carrera-resultado{display:flex;gap:12px;margin-top:14px;flex-wrap:wrap}
+  .pasajero{flex:1;min-width:180px;background:var(--panel);border:1px solid var(--linea);
+            border-radius:10px;padding:12px 14px;transition:border-color .2s}
+  .pasajero.gana{border-color:var(--ok)}
+  .pasajero.pierde{border-color:var(--mal)}
+  .pasajero .estado{font-family:var(--mono);font-size:12px;font-weight:700}
+  .pasajero.gana .estado{color:var(--ok)}
+  .pasajero.pierde .estado{color:var(--mal)}
+  .invariante{font-family:var(--mono);font-size:12px;color:var(--apagado);margin-top:10px}
+  .invariante b{color:var(--ok)}
+  footer{border-top:1px solid var(--linea);padding:18px 32px;color:var(--apagado);
+         font-size:12.5px}
+  footer b{color:var(--texto)}
+  .leyenda-mapa{position:absolute;bottom:8px;left:8px;z-index:500;background:rgba(13,14,16,.85);
+                border:1px solid var(--linea);border-radius:6px;padding:6px 10px;
+                font-size:11px;font-family:var(--mono);color:var(--texto)}
+  .nota-ventana{font-family:var(--mono);font-size:11.5px;color:var(--apagado);margin-top:4px}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>NITHEKY <span class="oro">· same-direction matching</span></h1>
+    <div class="tag">Technical proof — route corridor, direction validation, atomic last-seat reservation.
+      The matching math running on this page is the same code the test suite verifies.</div>
+  </div>
+  <div class="links">
+    <a href="https://github.com/enerBydev/nitheky-proof">repository</a>
+    <a href="https://github.com/enerBydev/nitheky-proof/blob/main/docs/REPRODUCIR.md">how to reproduce</a>
+  </div>
+</header>
+
+<main>
+  <section class="panel-izq">
+
+    <h2>Scenario — the client's own cases</h2>
+    <div class="escenarios">
+      <button class="esc activo" data-esc="A">
+        <span class="espera ok">expected: match</span>
+        <b>A — Zimpeto → Marracuene</b>
+        <small>Driver Maputo→Marracuene. Zimpeto lies along the route, direction compatible.</small>
+      </button>
+      <button class="esc" data-esc="B">
+        <span class="espera mal">expected: reject</span>
+        <b>B — Zimpeto → Maputo</b>
+        <small>Driver Maputo→Marracuene. The passenger travels the opposite direction.</small>
+      </button>
+      <button class="esc" data-esc="L1">
+        <span class="espera ok">expected: match</span>
+        <b>Luanda — Cacuaco → Viana</b>
+        <small>Country-neutral: same engine, Angola, zero reconfiguration.</small>
+      </button>
+      <button class="esc" data-esc="L2">
+        <span class="espera mal">expected: reject</span>
+        <b>Luanda — Viana → Luanda centre</b>
+        <small>Opposite direction in Angola: also rejected.</small>
+      </button>
+    </div>
+
+    <h2>Parameters</h2>
+    <div class="slider">
+      <label>corridor radius <b><span id="v-corredor"></span> m</b></label>
+      <input type="range" id="corredor" min="500" max="4000" step="100" value="1500">
+    </div>
+    <div class="slider">
+      <label>max detour <b><span id="v-desvio"></span> m</b></label>
+      <input type="range" id="desvio" min="500" max="8000" step="100" value="3000">
+    </div>
+    <div class="slider">
+      <label>seats requested <b><span id="v-plazas"></span></b></label>
+      <input type="range" id="plazas" min="1" max="4" step="1" value="1">
+    </div>
+    <div class="nota-ventana">driver window &amp; passenger window: 07:00–08:00 UTC, Oct 1 2026 · overlap required</div>
+
+    <h2>The nine requirements — measured</h2>
+    <table class="tabla9" id="tabla9">
+      <tr><td>1 · route storage</td><td class="val">polyline, 7 vertices — <span id="r1"></span></td></tr>
+      <tr><td>2 · corridor match</td><td class="val" id="r2"></td></tr>
+      <tr><td>3 · pickup before destination</td><td class="val" id="r3"></td></tr>
+      <tr><td>4 · same direction</td><td class="val" id="r4"></td></tr>
+      <tr><td>5 · configurable detour</td><td class="val" id="r5"></td></tr>
+      <tr><td>6 · time windows</td><td class="val" id="r6"></td></tr>
+      <tr><td>7 · available seats</td><td class="val" id="r7"></td></tr>
+      <tr><td>8 · multi-driver ranking</td><td class="val" id="r8"></td></tr>
+      <tr><td>9 · last-seat protection</td><td class="val">atomic — race demo below</td></tr>
+    </table>
+
+    <h2>Map</h2>
+    <div style="position:relative">
+      <div id="mapa"></div>
+      <div class="leyenda-mapa">— route · ● pickup · ▲ destination</div>
+    </div>
+  </section>
+
+  <section class="derecha">
+    <h2>Compatible drivers <span style="float:right;font-weight:400;text-transform:none;letter-spacing:0" id="cuenta-matches"></span></h2>
+    <div id="resultados"></div>
+    <div id="rechazados"></div>
+
+    <div class="tarjeta carrera">
+      <div class="fila">
+        <div>
+          <div class="nombre">Requirement 9 — two passengers, one seat</div>
+          <div style="color:var(--apagado);font-size:13px;margin-top:4px">
+            Ana and Bruno request Tomás's last available seat at the same instant.
+            The reservation is an atomic conditional write: reading “1 seat left” and
+            writing “0” cannot interleave. One wins, one is refused — always.
+          </div>
+        </div>
+        <button class="btn" id="btn-carrera">Run the race</button>
+      </div>
+      <div class="carrera-resultado">
+        <div class="pasajero" id="p-ana">
+          <div class="nombre" style="font-size:13.5px">Ana</div>
+          <div class="estado">— waiting</div>
+          <div class="invariante" id="det-ana"></div>
+        </div>
+        <div class="pasajero" id="p-bruno">
+          <div class="nombre" style="font-size:13.5px">Bruno</div>
+          <div class="estado">— waiting</div>
+          <div class="invariante" id="det-bruno"></div>
+        </div>
+      </div>
+      <div class="invariante" id="inv-carrera">
+        invariant: exactly <b>one</b> reservation · seats never below <b>0</b · no partial writes
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <b>What is demo and what is reusable.</b> Demo: the seed drivers and the page you are reading.
+  Reusable as-is: <b>motor/</b> (the matching arithmetic, zero dependencies) and <b>sql/</b>
+  (PostGIS schema + query + atomic reservation — the parts that cannot be “added later”).
+  Every number on this page was computed in your browser by the same module the
+  18-test suite verifies. Nothing here is a promise of behaviour — it is the behaviour.
+</footer>
+
+<script type="module">
+import {
+  proyectar, longitudPolilinea, buscarConductores, evaluar,
+  MotorReserva,
+  conductoresMozambique, pasajeroZimpetoMarracuene, pasajeroZimpetoMaputo,
+  pasajeroCacuacoViana, pasajeroVianaLuanda,
+  CORREDOR_MZ, CORREDOR_AO,
+} from "./motor.js";
+
+// ── el estado de la página ────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+const ESCENARIOS = {
+  A:  { peticion: pasajeroZimpetoMarracuene, mapa: CORREDOR_MZ, centro: [-25.85, 32.60], zoom: 10, titulo: "Maputo → Marracuene (driver) · Zimpeto → Marracuene (passenger)" },
+  B:  { peticion: pasajeroZimpetoMaputo,    mapa: CORREDOR_MZ, centro: [-25.85, 32.60], zoom: 10, titulo: "Maputo → Marracuene (driver) · Zimpeto → Maputo (passenger)" },
+  L1: { peticion: pasajeroCacuacoViana,    mapa: CORREDOR_AO, centro: [-8.88, 13.33], zoom: 12, titulo: "Luanda → Viana (driver) · Cacuaco → Viana (passenger)" },
+  L2: { peticion: pasajeroVianaLuanda,     mapa: CORREDOR_AO, centro: [-8.88, 13.33], zoom: 12, titulo: "Luanda → Viana (driver) · Viana → Luanda centre (passenger)" },
+};
+let esc = "A";
+
+// ── el mapa ──────────────────────────────────────────────────────────────
+const mapa = L.map("mapa", { zoomControl: true, attributionControl: true });
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 18,
+  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+}).addTo(mapa);
+let capas = L.layerGroup().addTo(mapa);
+
+function pintar(escenario, peticion) {
+  capas.remove();
+  capas = L.layerGroup().addTo(mapa);
+  const ruta = ESCENARIOS[escenario].mapa;
+  const coords = ruta.map((p) => [p.lat, p.lon]);
+
+  // la ruta del conductor: la polilínea REAL contra la que se mide todo
+  L.polyline(coords, { color: "#d4a017", weight: 3.5, opacity: 0.95 }).addTo(capas);
+  // el corredor visual (radio sobre cada vértice, para leerlo de un vistazo)
+  for (const p of ruta) {
+    L.circle([p.lat, p.lon], {
+      radius: peticion.corredorM, color: "#d4a017", weight: 0.5,
+      fillOpacity: 0.04,
+    }).addTo(capas);
+  }
+  // la proyección de la recogida y del destino sobre la ruta: las líneas
+  // punteadas son la distancia que decide el corredor y el desvío
+  const pr = proyectar(peticion.recogida, ruta);
+  const pd = proyectar(peticion.destino, ruta);
+  const puntoEnRuta = (frac) => puntoEnFraccion(ruta, frac);
+  L.polyline([[peticion.recogida.lat, peticion.recogida.lon], puntoEnRuta(pr.fraccion)],
+             { color: "#4a90d9", dashArray: "4 6", weight: 1.5 }).addTo(capas);
+  L.polyline([[peticion.destino.lat, peticion.destino.lon], puntoEnRuta(pd.fraccion)],
+             { color: "#3fb27f", dashArray: "4 6", weight: 1.5 }).addTo(capas);
+
+  L.circleMarker([peticion.recogida.lat, peticion.recogida.lon],
+    { radius: 7, color: "#4a90d9", fillColor: "#4a90d9", fillOpacity: 0.9 })
+    .bindTooltip("pickup", { permanent: true, direction: "left" }).addTo(capas);
+  L.circleMarker([peticion.destino.lat, peticion.destino.lon],
+    { radius: 7, color: "#3fb27f", fillColor: "#3fb27f", fillOpacity: 0.9 })
+    .bindTooltip("destination", { permanent: true, direction: "right" }).addTo(capas);
+
+  mapa.setView(ESCENARIOS[escenario].centro, ESCENARIOS[escenario].zoom);
+}
+
+// interpola el punto de la ruta en una fracción [0,1] del arco
+function puntoEnFraccion(ruta, frac) {
+  const tramos = [];
+  let total = 0;
+  for (let i = 0; i < ruta.length - 1; i++) {
+    const d = distanciaSimple(ruta[i], ruta[i + 1]);
+    tramos.push(d); total += d;
+  }
+  let objetivo = frac * total, acum = 0;
+  for (let i = 0; i < tramos.length; i++) {
+    if (acum + tramos[i] >= objetivo) {
+      const t = (objetivo - acum) / tramos[i];
+      return [ruta[i].lat + (ruta[i+1].lat - ruta[i].lat) * t,
+              ruta[i].lon + (ruta[i+1].lon - ruta[i].lon) * t];
+    }
+    acum += tramos[i];
+  }
+  return [ruta.at(-1).lat, ruta.at(-1).lon];
+}
+const distanciaSimple = (a, b) => Math.hypot((a.lon-b.lon)*111, (a.lat-b.lat)*111);
+
+// ── los resultados ───────────────────────────────────────────────────────
+function v(ok, texto) { return `<span class="v ${ok ? "ok" : "mal"}">${texto}</span>`; }
+const fmt = (m) => (m / 1000).toFixed(2) + " km";
+const hora = (ms) => new Date(ms).toISOString().slice(11, 16);
+
+function recalcular() {
+  const base = ESCENARIOS[esc].peticion();
+  const peticion = {
+    ...base,
+    corredorM: +$("corredor").value,
+    desvioMaxM: +$("desvio").value,
+    plazas: +$("plazas").value,
+  };
+  $("v-corredor").textContent = peticion.corredorM;
+  $("v-desvio").textContent = peticion.desvioMaxM;
+  $("v-plazas").textContent = peticion.plazas;
+
+  const conductores = conductoresMozambique();
+  const { matches, rechazados } = buscarConductores(conductores, peticion);
+  const ruta = ESCENARIOS[esc].mapa;
+  const pr = proyectar(peticion.recogida, ruta);
+  const pd = proyectar(peticion.destino, ruta);
+
+  // ── los nueve, en vivo ──────────────────────────────────────────────
+  const mejor = matches[0];
+  $("r1").textContent = (longitudPolilinea(ruta) / 1000).toFixed(1) + " km";
+  $("r2").innerHTML = Math.max(pr.distancia_m, pd.distancia_m) <= peticion.corredorM
+    ? v(true, `${Math.round(pr.distancia_m)} m / ${Math.round(pd.distancia_m)} m to route`)
+    : v(false, `${Math.round(Math.max(pr.distancia_m, pd.distancia_m))} m > corridor`);
+  $("r3").innerHTML = v(pr.fraccion < pd.fraccion,
+    `pickup frac ${pr.fraccion.toFixed(3)} → dropoff ${pd.fraccion.toFixed(3)}`);
+  $("r4").innerHTML = v(pr.fraccion < pd.fraccion, pr.fraccion < pd.fraccion
+    ? "same direction along route" : "opposite — REJECTED");
+  $("r5").innerHTML = mejor
+    ? v(true, `detour ${fmt(mejor.desvioM)} ≤ ${fmt(peticion.desvioMaxM)}`)
+    : v(false, `limit ${fmt(peticion.desvioMaxM)}`);
+  const solape = Math.max(0, ...conductores.map((c) =>
+    Math.min(c.ventana.fin, peticion.ventana.fin) - Math.max(c.ventana.inicio, peticion.ventana.inicio)));
+  $("r6").innerHTML = v(true, `${Math.round(solape / 60000)} min overlap (${hora(peticion.ventana.inicio)}–${hora(peticion.ventana.fin)})`);
+  $("r7").innerHTML = v(true, `filter: seats ≥ ${peticion.plazas} — hard, not “sorted by”`);
+  $("r8").innerHTML = matches.length
+    ? v(true, matches.map((m) => `${m.conductorId.replace("drv-", "")} ${m.puntuacion}%`).join(" · "))
+    : v(false, "none compatible");
+  $("cuenta-matches").textContent = `${matches.length} of ${conductores.length} drivers compatible`;
+
+  // ── las tarjetas ─────────────────────────────────────────────────────
+  $("resultados").innerHTML = matches.map((m) => {
+    const c = conductores.find((x) => x.id === m.conductorId);
+    return `
+    <div class="tarjeta">
+      <div class="fila">
+        <div class="nombre">${c.nombre ?? m.conductorId}
+          <span style="color:var(--apagado);font-weight:400;font-size:13px">
+            ${c.verificado ? "verified" : "unverified"} · ★${c.nota} (${c.valoraciones})</span></div>
+        <div class="puntos">${m.puntuacion}%</div>
+      </div>
+      <div class="detalle">
+        <div><div class="k">pickup → route</div><div class="n">${Math.round(m.recogidaDistM)} m</div></div>
+        <div><div class="k">detour</div><div class="n">${fmt(m.desvioM)}</div></div>
+        <div><div class="k">window overlap</div><div class="n">${Math.round(m.esperaMin)} min</div></div>
+        <div><div class="k">seats left</div><div class="n">${c.plazas}</div></div>
+      </div>
+    </div>`;
+  }).join("") || `<div class="rechazo" style="border-color:var(--mal)">
+      <b>zero compatible drivers</b> — this is the correct answer for this scenario.</div>`;
+
+  // solo los conductores del país del escenario: los de Maputo no dicen nada
+  // en el escenario de Luanda y al revés
+  $("rechazados").innerHTML = rechazados
+    .filter((r) => esc.startsWith("L") === (r.conductorId === "drv-joaquim"))
+    .map((r) => {
+      const c = conductores.find((x) => x.id === r.conductorId);
+      return `<div class="rechazo"><b>${c.nombre ?? r.conductorId}</b> — ${r.rechazo.motivo}: ${r.rechazo.detalle}</div>`;
+    }).join("");
+
+  pintar(esc, peticion);
+}
+
+// ── la carrera ──────────────────────────────────────────────────────────
+$("btn-carrera").addEventListener("click", async () => {
+  const btn = $("btn-carrera");
+  btn.disabled = true;
+  const motor = new MotorReserva([
+    { ...conductoresMozambique()[1], plazas: 1 }, // Tomás, 1 plaza
+  ]);
+  $("p-ana").className = "pasajero"; $("p-bruno").className = "pasajero";
+  $("det-ana").textContent = $("det-bruno").textContent = "requesting…";
+  $("p-ana").querySelector(".estado").textContent = "requesting…";
+  $("p-bruno").querySelector(".estado").textContent = "requesting…";
+
+  const [rA, rB] = await Promise.all([
+    motor.reservar("drv-tomas", "ana", 1),
+    motor.reservar("drv-tomas", "bruno", 1),
+  ]);
+  const pinta = (el, det, r) => {
+    el.querySelector(".estado").textContent = r ? "SEAT RESERVED" : "REFUSED";
+    det.textContent = r
+      ? `seat held · ${motor.plazasDe("drv-tomas")} left after write`
+      : "atomic conditional write returned 0 rows";
+  };
+  pinta($("p-ana"), $("det-ana"), rA);
+  pinta($("p-bruno"), $("det-bruno"), rB);
+  ($("p-ana")).classList.add(rA ? "gana" : "pierde");
+  ($("p-bruno")).classList.add(rB ? "gana" : "pierde");
+  const exitos = [rA, rB].filter(Boolean).length;
+  $("inv-carrera").innerHTML = exitos === 1
+    ? `invariant holds: <b>exactly one</b> winner · seats now <b>${motor.plazasDe("drv-tomas")}</b> · the loser got <b>nothing</b>`
+    : `INVARIANT BROKEN: ${exitos} winners`;
+  btn.disabled = false;
+  btn.textContent = "Run it again";
+});
+
+// ── los controles ────────────────────────────────────────────────────────
+for (const id of ["corredor", "desvio", "plazas"]) {
+  $(id).addEventListener("input", recalcular);
+}
+document.querySelectorAll(".esc").forEach((b) => {
+  b.addEventListener("click", () => {
+    document.querySelectorAll(".esc").forEach((x) => x.classList.remove("activo"));
+    b.classList.add("activo");
+    esc = b.dataset.esc;
+    recalcular();
+  });
+});
+
+recalcular();
+</script>
+</body>
+</html>
