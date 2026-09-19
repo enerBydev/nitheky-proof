@@ -44,72 +44,93 @@ escenarios A/B/Luanda, la carrera), y la API HTTP por `request`
 (`/api/salud`, `/api/buscar`, `/api/carrera`, `/api/reservar` con su 400
 validado). 32 tests.
 
-Para desarrollar con la base de datos de verdad (el modo PostGIS):
+Para desarrollar con la base de datos de verdad (el modo PostGIS) — sin
+Docker, con el mismo flake:
 
 ```bash
-docker compose up -d db
-docker compose exec -T db psql -U nitheky -d nitheky < sql/00_schema.sql
-docker compose exec -T db psql -U nitheky -d nitheky < sql/01_seed.sql
-docker compose exec -T db psql -U nitheky -d nitheky < sql/02_matching.sql
-docker compose exec -T db psql -U nitheky -d nitheky < sql/03_reserva.sql
-cp .env.example .env    # y descomentar DATABASE_URL
-pnpm dev                # /api/salud dirá "postgres"
+nix develop -c sql/pg.sh start   # PostGIS 18.6 + PostGIS 3.6, sembrado
+cp .env.example .env             # y descomentar DATABASE_URL
+nix develop -c pnpm dev          # /api/salud dirá "postgres"
 ```
+
+(`sql/pg.sh` sin argumento arranca; `stop`, `status` y `reset` también.
+El dato vive en `.pgdata/`, gitignored. Si prefiere su propio PostGIS:
+aplique `sql/00` → `01` → `02` → `03` con psql y apunte DATABASE_URL donde
+corresponda.)
 
 ## 3 · SQL con PostGIS (el camino de producción)
 
 ```bash
-docker run --name nitheky -e POSTGRES_PASSWORD=nitheky \
-           -e POSTGRES_USER=nitheky -e POSTGRES_DB=nitheky \
-           -p 5432:5432 -d postgis/postgis:18-3.6
-
-# esperar ~10 s a que arranque, y aplicar en orden:
-cat sql/00_schema.sql    | docker exec -i nitheky psql -U nitheky -d nitheky
-cat sql/01_seed.sql      | docker exec -i nitheky psql -U nitheky -d nitheky
-cat sql/02_matching.sql | docker exec -i nitheky psql -U nitheky -d nitheky
+nix develop -c sql/comprobar.sh
 ```
 
-`02` devuelve cuatro tablas: escenario A (dos conductores ordenados por
-puntuación), escenario B (**cero filas**: dirección opuesta), Luanda (el
-conductor de Joaquim) y Luanda al revés (cero filas). Después, la carrera:
+Ese es todo el comando. Hace, en orden: arrancar (si hace falta) el PostGIS
+18 local del flake, sembrar esquema y datos, y **verificar con invariante**:
+
+- **escenario A** (Zimpeto→Marracuene) → 2 conductores ordenados por puntuación
+- **escenario B** (Zimpeto→Maputo) → **cero filas**: dirección opuesta
+- **Luanda** (Cacuaco→Viana) → el conductor de Joaquim; **al revés** → cero
+- la **carrera por la última plaza, 100 veces** — una plaza, un ganador,
+  cero sobreventas, o exit 1
+
+Si quiere ver los números a mano, las cuatro consultas con su salida esperada
+están comentadas dentro de `sql/02_matching.sql` y `sql/03_reserva.sql`; la
+carrera suelta, con sus DOS sesiones psql reales:
 
 ```bash
-cat sql/03_reserva.sql | docker exec -i nitheky psql -U nitheky -d nitheky
-docker exec -i nitheky psql -U nitheky -d nitheky -X -qAt \
-  -c "select reservar_plaza('drv-tomas','pasajero-ana',1);" &
-docker exec -i nitheky psql -U nitheky -d nitheky -X -qAt \
-  -c "select reservar_plaza('drv-tomas','pasajero-bruno',1);" &
-wait
+nix develop -c sql/pg.sh start        # si no está arriba
+nix develop -c sql/carrera.sh         # dos psql simultáneos + invariante
 ```
 
-Una `t`, una `f`, y las plazas de Tomás en 0. Siempre. El script
-`sql/carrera.sh` hace lo mismo y **comprueba el invariante** (una plaza, un
-ganador, cero sobreventas) con exit 1 si se rompe:
+El CI de GitHub Actions corre **exactamente el mismo script** (`sql/comprobar.sh`)
+sobre el mismo flake en cada push — ver `.github/workflows/ci.yml`, trabajo
+`sql`. No hay una versión de la verdad para CI y otra para humanos.
+
+## 4 · El flake entero (nix, sin Docker)
+
+El flake congela las dos capas que Docker dejaba sueltas: el toolchain
+(node 22.23.2, pnpm 11.20.0, PostgreSQL 18.6 + PostGIS 3.6.4, nixpkgs por
+revisión de git — sellado en `flake.lock`) y las dependencias (`pnpmDeps`:
+un fixed-output derivation sobre el lockfile entero — si un paquete cambia
+por debajo, el build rompe).
 
 ```bash
-DATABASE_URL=postgresql://nitheky:nitheky@localhost:5432/nitheky sql/carrera.sh
+nix develop            # el entorno: node, pnpm, psql, postgis
+nix run                # el servidor Nitro que NIX construyó, en :3000
+nix flake check        # construye el paquete Y corre los 18 tests del
+                        # motor DENTRO del sandbox — y si algo no cuadra,
+                        # exit distinto de cero
 ```
 
-El CI de GitHub Actions corre exactamente este camino contra un PostGIS 18
-real en cada push — ver `.github/workflows/ci.yml`, trabajo `sql`.
+El trabajo `nix` del CI hace exactamente eso, y después enciende el
+servidor construido y le pregunta a `/api/salud` — la prueba de que el
+artefacto que nix produce no es una promesa.
 
 ## Qué es demo y qué es reutilizable
 
 | Pieza | Qué es | Reutilizable |
 |---|---|---|
 | `motor/` | la aritmética del matching, cero dependencias, Node y navegador | **tal cual** — es el núcleo de la app y de los tests |
-| `sql/` | el camino de producción: esquema PostGIS, la consulta única, la reserva atómica | **tal cual** |
+| `sql/` | el camino de producción: esquema PostGIS, la consulta única, la reserva atómica; `pg.sh` y `comprobar.sh` lo hacen reproducible sin Docker | **tal cual** |
 | `server/` | la API Nitro que expone motor y SQL con validación zod | como base del MVP |
 | `app/` | la página Nuxt (mapa, escenarios, parámetros, carrera) | demo — la UI del producto real se diseña aparte |
+| `flake.nix` | el toolchain congelado + el paquete del servidor + los tests en sandbox | **tal cual** — extender a más sistemas exige verificarlos |
 | los conductores sembrados | datos con los números interesantes a mano | demo — datos reales de un routing API (OSRM/Valhalla) |
 
 ## Versiones con las que esto corre (todas release, ninguna alpha)
 
-Node 22+ (probado en 22 LTS y 24 LTS) · pnpm 11.20 · Nuxt 4.5.2 ·
+Node 22.23.2 (LTS) · pnpm 11.20.0 · Nuxt 4.5.2 ·
 Nuxt UI 4.11.1 (trae @nuxt/icon, @nuxt/fonts, @nuxtjs/color-mode) ·
 Tailwind CSS 4.3.3 · Leaflet 1.9.4 (@nuxtjs/leaflet 1.3.3) · Vitest 5.0.1 ·
-Playwright 1.63 · TypeScript 6.0.3 · ESLint (@nuxt/eslint 1.17) ·
-pg 8.23 · zod 4.6 · PostGIS 18-3.6.
+Playwright 1.63 · TypeScript 6.0.3 · ESLint 10.10 (@nuxt/eslint 1.17) ·
+pg 8.23 · zod 4.6 · PostgreSQL 18.6 + PostGIS 3.6.4 — y el propio flake:
+nixpkgs `nixos-26.05` (revisión `cf9d2fb`, 18-sep-2026) sellado en
+`flake.lock`.
+
+Una honestidad de menos: dentro del sandbox de nix no hay red a propósito,
+así que allí el módulo de fuentes cae a la pila de sistema; el bundle de
+Pages (construido por el CI, con red) sí auto-aloja las fuentes, como midió
+el banco de pruebas del ecosistema.
 
 Las decisiones de ecosistema (por qué Nuxt UI sí y MapLibre no, por qué Esri
 y no CARTO) están medidas y documentadas en el repo de conocimiento interno;

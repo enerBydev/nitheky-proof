@@ -47,19 +47,35 @@ pnpm test:e2e    # 32 E2E: pages and API against the real server (Firefox + Chro
 pnpm dev         # develop locally; /api/salud says which engine is live
 ```
 
+## Run it (Nix — no Docker, no "works on my machine")
+
+The flake pins the whole toolchain (node, pnpm, postgres+postgis, nixpkgs
+by git revision — sealed in `flake.lock`) **and** the dependency layer
+(`pnpmDeps`: a fixed-output derivation over the entire lockfile — if a
+package changes under it, the build breaks, loudly):
+
+```bash
+nix develop                    # node 22 · pnpm 11.20 · PostGIS 18 + PostGIS 3.6
+nix develop -c sql/pg.sh start # local PostGIS, seeded
+nix run                        # the server NIX built, on :3000
+nix flake check                # builds the package AND runs the 18 motor tests
+```
+
 The fullstack PostGIS mode (matching and reservations running IN the
 database, exactly what the proposal ships):
 
 ```bash
-docker compose up -d db     # PostGIS 18-3.6
-# seed it (two lines in docs/REPRODUCIR.md), then:
-cp .env.example .env && pnpm dev
+nix develop -c sql/pg.sh start    # PostGIS 18 local, schema + seed applied
+nix develop -c sql/comprobar.sh   # both scenarios + Luanda + the 100-race check
+cp .env.example .env             # uncomment DATABASE_URL, then:
+nix develop -c pnpm dev           # /api/salud now says "postgres"
 ```
 
 Four ways to reproduce everything, including the two-session SQL race for the
 last seat: **[docs/REPRODUCIR.md](docs/REPRODUCIR.md)**.
-CI runs all of it on every push: lint, typecheck, unit, E2E and the PostGIS
-path against a real database (`.github/workflows/ci.yml`).
+CI runs all of it on every push: lint, typecheck, unit, E2E, the PostGIS
+path against a real database, and the nix flake itself
+(`.github/workflows/ci.yml`).
 
 ## Why direction is a *number*, not a guess
 
@@ -98,11 +114,16 @@ server/       the Nitro API: /api/salud · /api/escenarios · /api/buscar ·
               in-memory engine, or PostGIS (sql/02, sql/03) when DATABASE_URL exists.
 sql/          the production path — PostGIS: schema, seed, the one matching
               query, the atomic reservation + the scripted race with invariants.
+              pg.sh starts/stops/resets a local PostGIS 18 (from the nix flake);
+              comprobar.sh is THE acceptance script: both scenarios of the
+              assignment, Luanda, and the 100-race invariant — same script
+              a human runs and the CI runs.
 tests/unit/   the 18 tests over motor/ (Vitest)
 tests/e2e/    pages + API against the real server (Playwright, Firefox primary)
 docs/         REPRODUCIR.md · the vision audit that shaped this v2 · evidence
-.github/      CI: lint → typecheck → unit → build → E2E → PostGIS job → Pages
-Dockerfile + docker-compose.yml   the whole stack in one command
+.github/      CI: lint → typecheck → unit → build → E2E → PostGIS → nix → Pages
+flake.nix     the whole stack, frozen: dev shell, the Nitro server as a package,
+              and `nix flake check` running the 18 tests inside the sandbox
 ```
 
 This v2 exists because an AI-vision + QA audit of the static v1 scored it
@@ -130,9 +151,15 @@ this version scored it 9/10 with the same judge and the same prompts.
 
 ## Versions — all releases, none alpha
 
-Node 22+ · pnpm 11.20 · Nuxt 4.5.2 · Nuxt UI 4.11.1 · Tailwind CSS 4.3.3 ·
+Node 22.23.2 · pnpm 11.20.0 · Nuxt 4.5.2 · Nuxt UI 4.11.1 · Tailwind CSS 4.3.3 ·
 Leaflet 1.9.4 (@nuxtjs/leaflet 1.3.3) · Vitest 5.0.1 · Playwright 1.63 ·
-TypeScript 6.0.3 · pg 8.23 · zod 4.6 · PostGIS 18-3.6 — decisions measured,
-not adopted by fashion: see docs/REPRODUCIR.md.
+TypeScript 6.0.3 · pg 8.23 · zod 4.6 · PostgreSQL 18.6 + PostGIS 3.6.4 — and
+the toolchain itself frozen by the flake: nixpkgs `nixos-26.05` at revision
+`cf9d2fb`, sealed in `flake.lock`. Decisions measured, not adopted by
+fashion: see docs/REPRODUCIR.md.
 
-MIT licensed. Built by Rene Mendoza — enerBydev.
+One honest nuance: inside the nix sandbox there is no network by design, so
+the fonts module falls back to the system font stack there; the CI-built
+Pages bundle self-hosts the fonts, as measured in the ecosystem bench.
+
+MIT licensed. Built by Rene Mendoza — enerbydev.

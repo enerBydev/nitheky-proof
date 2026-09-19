@@ -99,5 +99,7 @@ order by id;
 -- la geometría en grados da 0.522 — la diferencia del 0.4 % viene de medir
 -- la fracción en el plano de grados y está muy por debajo del margen de
 -- dirección de 0.01 que usa la consulta de 02).
-select st_linelocatepoint(ruta::geometry, st_point(32.5656, -25.8457)::geometry) as fraccion_zimpeto
+-- (st_setsrid: st_point nace con SRID 0 y contra la ruta 4326 PostGIS
+--  rechaza geometrías de SRID mezclado — no lo adivina.)
+select st_linelocatepoint(ruta::geometry, st_setsrid(st_point(32.5656, -25.8457), 4326)) as fraccion_zimpeto
 from conductores where id = 'drv-amelia';

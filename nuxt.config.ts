@@ -32,8 +32,8 @@ export default defineNuxtConfig({
     motor: ruta('./motor'),
   },
 
-  // GitHub Pages sirve el proyecto bajo /nitheky-proof/; en local y Docker,
-  // raíz. Se sobreescribe con NUXT_APP_BASE_URL en el job de Pages.
+  // GitHub Pages sirve el proyecto bajo /nitheky-proof/; en local y con
+  // `nix run`, raíz. Se sobreescribe con NUXT_APP_BASE_URL en el job de Pages.
   app: {
     baseURL: process.env.NUXT_APP_BASE_URL || '/',
     head: {

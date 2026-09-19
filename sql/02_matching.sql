@@ -87,7 +87,7 @@ language sql stable as $$
     where misma_direccion
       and desvio_m <= p_desvio_max_m
   )
-  select conductor_id, nombre, recogida_dist_m, destino_dist_m,
+  select id as conductor_id, nombre, recogida_dist_m, destino_dist_m,
          fr as fraccion_recogida, fd as fraccion_destino, desvio_m,
          extract(epoch from upper(ventana * p_ventana)) / 60.0 as solape_min,
          -- pesos 0.4 / 0.3 / 0.2 / 0.1 — a la vista, no escondidos
@@ -142,10 +142,13 @@ select * from buscar_conductores(
   1, 1500, 3000
 );
 
--- POR QUÉ SALIÓ VACÍO (para el escenario B, el número a la vista):
-select st_linelocatepoint(ruta::geometry, st_point(32.5656, -25.8457)::geometry) as fraccion_zimpeto,
-       st_linelocatepoint(ruta::geometry, st_point(32.5832, -25.9655)::geometry) as fraccion_maputo,
-       st_linelocatepoint(ruta::geometry, st_point(32.5656, -25.8457)::geometry)
-         < st_linelocatepoint(ruta::geometry, st_point(32.5832, -25.9655)::geometry)
+-- POR QUÉ SALIÓ VACÍO (para el escenario B, el número a la vista).
+-- (st_setsrid en los tres: st_point nace con SRID 0 y mezclado con la
+--  ruta 4326 PostGIS lo rechaza — dentro de buscar_conductores no hace
+--  falta porque sus parámetros ya son geography(point, 4326).)
+select st_linelocatepoint(ruta::geometry, st_setsrid(st_point(32.5656, -25.8457), 4326)) as fraccion_zimpeto,
+       st_linelocatepoint(ruta::geometry, st_setsrid(st_point(32.5832, -25.9655), 4326)) as fraccion_maputo,
+       st_linelocatepoint(ruta::geometry, st_setsrid(st_point(32.5656, -25.8457), 4326))
+         < st_linelocatepoint(ruta::geometry, st_setsrid(st_point(32.5832, -25.9655), 4326))
          as recogida_antes_de_destino
 from conductores where id = 'drv-amelia';

@@ -20,3 +20,9 @@ blob-report
 
 # Sistema
 .DS_Store
+
+# Nix
+result
+
+# PostgreSQL local (sql/pg.sh)
+.pgdata

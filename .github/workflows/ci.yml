@@ -1,10 +1,15 @@
 name: ci
 
-# CI de la casa: nada se promete que no se corra. Cuatro trabajos:
+# CI de la casa: nada se promete que no se corra. Cinco trabajos:
 #   calidad  → lint + typecheck + los 18 tests del motor + build
 #   e2e      → páginas y API contra el servidor real, Firefox y Chromium
 #   sql      → el camino PostGIS con un PostGIS 18 de verdad + la carrera
+#   nix      → el flake: `nix flake check` + humo del servidor que nix construye
 #   pages    → en main: generate estático y deploy a GitHub Pages
+#
+# Los trabajos sql y nix usan el MISMO flake y los MISMOS scripts que un
+# humano en local (`nix develop` + sql/pg.sh + sql/comprobar.sh): no hay
+# una versión de CI de la verdad y otra doméstica.
 on:
   push:
     branches: [main]
@@ -59,56 +64,50 @@ jobs:
           retention-days: 7
 
   sql:
-    # El camino de producción contra un PostGIS REAL: esquema, semilla,
-    # matching y la reserva atómica con su carrera y su invariante.
+    # El camino de producción contra un PostGIS REAL: el mismo binario que
+    # trae el dev shell del flake, el mismo script de aceptación que corre
+    # un humano. Sin Docker — sin capa de indirección entre local y CI.
     runs-on: ubuntu-latest
-    services:
-      db:
-        image: postgis/postgis:18-3.6
-        env:
-          POSTGRES_USER: nitheky
-          POSTGRES_PASSWORD: nitheky
-          POSTGRES_DB: nitheky
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U nitheky -d nitheky"
-          --health-interval 3s
-          --health-timeout 3s
-          --health-retries 20
     steps:
       - uses: actions/checkout@v4
-      - name: aplicar esquema, semilla y funciones
+      - uses: cachix/install-nix-action@v31
+      - name: PostGIS 18 desde el flake (arrancar + sembrar)
+        run: nix develop -c sql/pg.sh start
+      - name: los dos escenarios del encargo, Luanda y la carrera (100 veces)
+        env:
+          DATABASE_URL: postgresql://nitheky:nitheky@127.0.0.1:5432/nitheky
+        run: nix develop -c sql/comprobar.sh
+      - name: parar
+        if: always()
+        run: nix develop -c sql/pg.sh stop || true
+
+  nix:
+    # El flake verificándose a sí mismo: `nix flake check` construye el
+    # paquete del servidor Nitro Y corre los 18 tests del motor DENTRO del
+    # sandbox; después, el servidor que nix construye se enciende de verdad.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - run: nix flake check
+      - name: humo del servidor construido por nix
         run: |
-          export PGPASSWORD=nitheky
-          psql -h 127.0.0.1 -U nitheky -d nitheky -v ON_ERROR_STOP=1 -f sql/00_schema.sql
-          psql -h 127.0.0.1 -U nitheky -d nitheky -v ON_ERROR_STOP=1 -f sql/01_seed.sql
-          psql -h 127.0.0.1 -U nitheky -d nitheky -v ON_ERROR_STOP=1 -f sql/02_matching.sql
-          psql -h 127.0.0.1 -U nitheky -d nitheky -v ON_ERROR_STOP=1 -f sql/03_reserva.sql
-      - name: los dos escenarios del encargo (A encuentra 2 · B encuentra 0)
-        run: |
-          export PGPASSWORD=nitheky
-          A=$(psql -h 127.0.0.1 -U nitheky -d nitheky -X -qAt -c \
-              "select count(*) from buscar_conductores(st_point(32.5656,-25.8457), st_point(32.6489,-25.7422), tstzrange('2026-10-01 07:00+00','2026-10-01 08:00+00'), 1, 1500, 3000);")
-          B=$(psql -h 127.0.0.1 -U nitheky -d nitheky -X -qAt -c \
-              "select count(*) from buscar_conductores(st_point(32.5656,-25.8457), st_point(32.5832,-25.9655), tstzrange('2026-10-01 07:00+00','2026-10-01 08:00+00'), 1, 1500, 3000);")
-          echo "escenario A → $A conductores (esperado: 2)"
-          echo "escenario B → $B conductores (esperado: 0)"
-          [ "$A" = "2" ] && [ "$B" = "0" ]
-      - name: la carrera por la última plaza, 100 veces
-        run: |
-          export PGPASSWORD=nitheky
-          for i in $(seq 1 100); do
-            psql -h 127.0.0.1 -U nitheky -d nitheky -X -qAt -c \
-              "delete from reservas where conductor_id='drv-tomas'; update conductores set plazas=1 where id='drv-tomas';" >/dev/null
-            sql/carrera.sh >/dev/null || { echo "carrera $i rompió el invariante"; exit 1; }
+          nix build .#nitheky-web
+          PORT=4197 result/bin/nitheky-web &
+          PID=$!
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:4197/api/salud > /tmp/salud.json && break
+            sleep 1
           done
-          echo "100 carreras limpias: una plaza, un ganador, cero sobreventas"
+          grep -q '"ok":true' /tmp/salud.json
+          curl -sf -o /dev/null http://127.0.0.1:4197/requisitos
+          kill "$PID"
+          echo "✔ el servidor que nix construye sirve páginas y API"
 
   pages:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
-    needs: [calidad, e2e, sql]
+    needs: [calidad, e2e, sql, nix]
     permissions:
       pages: write
       id-token: write
