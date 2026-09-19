@@ -1,0 +1,8 @@
+# pnpm · los paquetes con instalación nativa que SÍ deben correr su postinstall.
+# Medido en el banco de pruebas del ecosistema (docs de ALoNNo, 2026-09-11):
+# sin esto, `pnpm install` termina en exit 1 con ERR_PNPM_IGNORED_BUILDS.
+allowBuilds:
+  esbuild: true
+  workerd: true
+  vue-demi: true # lo arrastra @nuxt/ui
+  unrs-resolver: true # lo arrastra @nuxt/eslint (nativo; no estaba en el banco de pruebas)

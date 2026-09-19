@@ -1,0 +1,78 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+/*
+ * NITHEKY · tema: oro sobre carbón.
+ * Los tokens de color de Nuxt UI ya vienen de `ui.colors` en nuxt.config
+ * (amber / stone). Aquí solo lo que la marca necesita por encima:
+ * el oro exacto de la v1 y el fondo de carbón, para que la página nueva sea
+ * reconociblemente la misma que el cliente ya vio.
+ */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-oro: #d4a017;
+  --color-oro-suave: #e8c563;
+  --color-carbon: #0d0e10;
+  --color-panel: #15171a;
+  --color-panel2: #1b1e22;
+  --color-linea: #2a2e34;
+
+  --color-ok: #4ade80; /* el verde de la v1 fallaba AA: este pasa (7.4:1 sobre carbón) */
+  --color-mal: #f87171; /* 6.0:1 sobre carbón */
+  --color-info: #7cb8f2; /* 7.9:1 sobre carbón */
+}
+
+html {
+  background-color: var(--color-carbon);
+  color-scheme: dark;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-carbon);
+  color: #e8e6e1;
+}
+
+/* El mapa es el argumento: las teselas grises de Esri dejan que la ruta
+ * dorada sea lo único con color de la pantalla (medido, doc 22). */
+.mapa-contenedor {
+  height: 420px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--color-linea);
+  z-index: 1; /* los popups de Leaflet se quedan debajo de la cabecera fija */
+}
+
+.leaflet-container {
+  background: #1a1c1f;
+  font-family: var(--font-sans);
+}
+
+/* Números y códigos SIEMPRE en mono: es la casa tipográfica de la demo. */
+.numero {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Los controles de zoom del mapa, vestidos de la casa (hallazgo menor de la
+ * auditoría v2: flotaban "desnudos" sobre las teselas claras). */
+.leaflet-bar a {
+  background-color: rgba(13, 14, 16, 0.88);
+  color: #e8e6e1;
+  border-color: var(--color-linea);
+}
+.leaflet-bar a:hover {
+  background-color: rgba(27, 30, 34, 0.95);
+  color: var(--color-oro-suave);
+}
+
+/* Objetivo táctil: en pantallas de dedo, el pulgar del slider crece
+ * (auditoría móvil v2: 20 px estándar es pequeño para el pulgar humano). */
+@media (pointer: coarse) {
+  span[role="slider"] {
+    block-size: 1.5rem;
+    inline-size: 1.5rem;
+  }
+}

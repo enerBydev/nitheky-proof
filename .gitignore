@@ -1,2 +1,22 @@
-node_modules/
-motor.js.map
+# Nuxt
+.nuxt
+.output
+.data
+dist
+
+# Node
+node_modules
+*.log*
+
+# Entorno
+.env
+.env.*
+!.env.example
+
+# Playwright
+test-results
+playwright-report
+blob-report
+
+# Sistema
+.DS_Store

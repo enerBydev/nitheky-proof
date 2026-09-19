@@ -1,0 +1,12 @@
+node_modules
+.output
+.nuxt
+.data
+dist
+test-results
+playwright-report
+.git
+docs/auditoria
+*.md
+Dockerfile
+docker-compose.yml

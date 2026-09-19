@@ -1,12 +1,15 @@
-# NITHEKY — same-direction matching · technical proof
+# NITHEKY — same-direction matching · fullstack technical proof
 
-The two scenarios from the assignment, the nine requirements behind them, and
-a reproducible test for each. No server needed to try it:
+The two scenarios from the assignment, the nine requirements behind them, a
+reproducible test for each — and now the whole thing is the app the proposal
+actually promises: a **Nuxt 4 fullstack application** with the tested
+matching engine at its core, an HTTP API, CI, and a PostGIS path.
 
 > **Live page:** <https://enerbydev.github.io/nitheky-proof/>
 > — the map, the two Maputo scenarios, the Luanda scenarios, the parameters,
-> and the last-seat race, all computed in the browser by the same code the
-> test suite verifies.
+> and the last-seat race. The math runs in your browser importing the same
+> module the test suite verifies; the race calls the server API when there is
+> one, and tells you which one just ran.
 
 ```
 Driver: Maputo → Marracuene          ✓ matches the passenger from Zimpeto
@@ -27,51 +30,36 @@ Passenger: Zimpeto → Maputo            (opposite direction along the route)
 | 5 | configurable detour | `desvio_max_m` per query and per driver | 2.48 km measured, limit adjustable |
 | 6 | time-window compatibility | `tstzrange &&` · `ventanasSolapan()` | overlap in minutes, hard filter |
 | 7 | available seats | `plazas >= requested` — filter, not sort order | hard reject when 0 left |
-| 8 | ranking of compatible drivers | deterministic score in `puntuar()` | amelia 91.4% > tomás 82.6% |
-| 9 | last-seat double-booking protection | atomic conditional update `sql/03_reserva.sql` · `motor/reserva.ts` | 1,000 concurrent races, **0 double sales** |
-
-## Run the tests (no dependencies, Node 22+)
-
-```bash
-node --test "tests/*.test.ts"
-```
-
-```
-ℹ tests 18   ℹ pass 18   ℹ fail 0
-   ESCENARIO A · Zimpeto→Marracuene  → matches, ranked
-   ESCENARIO B · Zimpeto→Maputo       → rejected: dirección_opuesta
-   la última plaza se vende UNA vez en 1000 carreras simultáneas
-   NEUTRALIDAD DE PAÍS: Luanda funciona con el mismo código
-```
+| 8 | ranking of compatible drivers | deterministic score in `puntuar()` | Amélia 91.4% > Tomás 82.6% |
+| 9 | last-seat double-booking protection | atomic conditional update `sql/03_reserva.sql` · `motor/reserva.ts` · `/api/reservar` | 1,000 concurrent races, **0 double sales** |
 
 Every requirement has a test that would fail if that requirement were
-removed — including the country-neutrality one, which fails if anyone
-hardcodes a country into the engine.
+removed — including the country-neutrality one, which reads the motor's
+source and fails if anyone hardcodes a country into the engine.
 
-## Run the SQL (one Docker line, any PostGIS 3)
-
-```bash
-docker run --name nitheky -e POSTGRES_USER=nitheky -e POSTGRES_PASSWORD=nitheky \
-           -e POSTGRES_DB=nitheky -p 5432:5432 -d postgis/postgis:16-3.4
-cat sql/00_schema.sql   | docker exec -i nitheky psql -U nitheky -d nitheky
-cat sql/01_seed.sql     | docker exec -i nitheky psql -U nitheky -d nitheky
-cat sql/02_matching.sql | docker exec -i nitheky psql -U nitheky -d nitheky
-```
-
-Then the race for the last seat, with two real concurrent sessions:
+## Run it (Node 22+)
 
 ```bash
-cat sql/03_reserva.sql | docker exec -i nitheky psql -U nitheky -d nitheky
-docker exec -i nitheky psql -U nitheky -d nitheky -X -qAt \
-  -c "select reservar_plaza('drv-tomas','ana',1);" &
-docker exec -i nitheky psql -U nitheky -d nitheky -X -qAt \
-  -c "select reservar_plaza('drv-tomas','bruno',1);" &
-wait
-# → one true, one false, seats at 0, exactly one reservation. Every time.
+pnpm install     # o npm install
+pnpm test        # 18 unit tests over motor/ — the same module the page imports
+pnpm build       # the Nitro server: pages + the whole HTTP API
+pnpm test:e2e    # 32 E2E: pages and API against the real server (Firefox + Chromium)
+pnpm dev         # develop locally; /api/salud says which engine is live
 ```
 
-Full instructions, including how to verify the invariants automatically:
-**[docs/REPRODUCIR.md](docs/REPRODUCIR.md)**.
+The fullstack PostGIS mode (matching and reservations running IN the
+database, exactly what the proposal ships):
+
+```bash
+docker compose up -d db     # PostGIS 18-3.6
+# seed it (two lines in docs/REPRODUCIR.md), then:
+cp .env.example .env && pnpm dev
+```
+
+Four ways to reproduce everything, including the two-session SQL race for the
+last seat: **[docs/REPRODUCIR.md](docs/REPRODUCIR.md)**.
+CI runs all of it on every push: lint, typecheck, unit, E2E and the PostGIS
+path against a real database (`.github/workflows/ci.yml`).
 
 ## Why direction is a *number*, not a guess
 
@@ -94,6 +82,36 @@ direction, they are the same corner; and because `ST_LineLocatePoint`
 measures in the planar degree space while distances are geodesic. The
 measured discrepancy on this corridor is 0.4% — documented, not hidden.
 
+## Architecture
+
+```
+motor/        the matching arithmetic — zero dependencies, runs in Node and browser.
+              Unchanged since the audited v1 (only type guards added; tests re-verify).
+  geoespacial.ts   haversine, projection onto polyline, arc fractions
+  matching.ts      the nine requirements as pure functions + the ranking
+  reserva.ts       atomic last-seat reservation (the in-memory twin of sql/03)
+  escenarios.ts    the client's scenarios, with real coordinates
+app/          the Nuxt UI: map (Leaflet, Esri Light Gray), scenarios, sliders,
+              the nine measured live, the race. Nuxt UI 4 + Tailwind 4.
+server/       the Nitro API: /api/salud · /api/escenarios · /api/buscar ·
+              /api/reservar · /api/carrera — zod-validated, dual mode:
+              in-memory engine, or PostGIS (sql/02, sql/03) when DATABASE_URL exists.
+sql/          the production path — PostGIS: schema, seed, the one matching
+              query, the atomic reservation + the scripted race with invariants.
+tests/unit/   the 18 tests over motor/ (Vitest)
+tests/e2e/    pages + API against the real server (Playwright, Firefox primary)
+docs/         REPRODUCIR.md · the vision audit that shaped this v2 · evidence
+.github/      CI: lint → typecheck → unit → build → E2E → PostGIS job → Pages
+Dockerfile + docker-compose.yml   the whole stack in one command
+```
+
+This v2 exists because an AI-vision + QA audit of the static v1 scored it
+6/10 and listed what a client would trip on: map below the fold, Spanish
+rejection strings inside an English UI, no production stack. The audit, the
+raw model verdicts and the screenshots live in
+[docs/AUDITORIA-VISION-QA.md](docs/AUDITORIA-VISION-QA.md); the re-audit of
+this version scored it 9/10 with the same judge and the same prompts.
+
 ## Honest notes
 
 - The corridor seed uses 7 vertices. Real production routes will carry
@@ -104,26 +122,17 @@ measured discrepancy on this corridor is 0.4% — documented, not hidden.
   standard choice when the route is a polyline rather than a street graph.
 - Country-neutrality is not a layer — it is the absence of one. The engine
   knows nothing about Mozambique or Angola; the tests would fail if it did.
-- What is demo and what is reusable: see the table at the end of
+- The in-memory reservation store is per-process: it demonstrates the
+  atomicity logic, and the SQL path is the production one (the CI runs it
+  against a real PostGIS on every push).
+- What is demo and what is reusable: the table at the end of
   [docs/REPRODUCIR.md](docs/REPRODUCIR.md).
 
-## Layout
+## Versions — all releases, none alpha
 
-```
-motor/        the matching arithmetic — zero dependencies, runs in Node and browser
-  geoespacial.ts   haversine, projection onto polyline, arc fractions
-  matching.ts       the nine requirements as pure functions + the ranking
-  reserva.ts        atomic last-seat reservation (the in-memory twin of sql/03)
-  escenarios.ts     the client's scenarios, with real coordinates
-sql/          the production path — PostGIS
-  00_schema.sql    linestring routes, seats, unique constraints
-  01_seed.sql      Maputo→Marracuene, the two passenger scenarios, Luanda→Viana
-  02_matching.sql  the one query: corridor + direction + detour + windows + seats + ranking
-  03_reserva.sql   atomic conditional reservation + the two-session race
-  carrera.sh        the race, scripted, with the invariant checked
-tests/        18 tests: one per requirement, plus the 1,000-race suite
-web/          the page entry — imports the same motor the tests verify
-index.html    the live page (dark, one file, Leaflet from CDN)
-```
+Node 22+ · pnpm 11.20 · Nuxt 4.5.2 · Nuxt UI 4.11.1 · Tailwind CSS 4.3.3 ·
+Leaflet 1.9.4 (@nuxtjs/leaflet 1.3.3) · Vitest 5.0.1 · Playwright 1.63 ·
+TypeScript 6.0.3 · pg 8.23 · zod 4.6 · PostGIS 18-3.6 — decisions measured,
+not adopted by fashion: see docs/REPRODUCIR.md.
 
 MIT licensed. Built by Rene Mendoza — enerBydev.

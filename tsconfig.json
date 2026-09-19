@@ -1,0 +1,6 @@
+{
+  // https://nuxt.com/docs/guide/concepts/typescript · la configuración real
+  // la genera Nuxt en .nuxt/tsconfig.json (incluido el alias motor/ y
+  // allowImportingTsExtensions que el motor necesita).
+  "extends": "./.nuxt/tsconfig.json"
+}

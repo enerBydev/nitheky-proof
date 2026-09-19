@@ -70,8 +70,9 @@ export function puntoASegmento(
 /** Longitud total de una polilínea en metros. */
 export function longitudPolilinea(ruta: Polilinea): number {
   let total = 0;
+  // (guard de tipos: el índice está acotado por el propio for — sin cambio de comportamiento)
   for (let i = 0; i < ruta.length - 1; i++) {
-    total += haversine(ruta[i], ruta[i + 1]);
+    total += haversine(ruta[i]!, ruta[i + 1]!);
   }
   return total;
 }
@@ -98,7 +99,8 @@ export function proyectar(p: Punto, ruta: Polilinea): Proyeccion {
   const tramos: number[] = [];
   let total = 0;
   for (let i = 0; i < ruta.length - 1; i++) {
-    const d = haversine(ruta[i], ruta[i + 1]);
+    // (los índices están acotados por el propio for — guards de tipos, no de lógica)
+    const d = haversine(ruta[i]!, ruta[i + 1]!);
     tramos.push(d);
     total += d;
   }
@@ -107,13 +109,13 @@ export function proyectar(p: Punto, ruta: Polilinea): Proyeccion {
   let tramo = 0;
   let acumulado = 0;
   for (let i = 0; i < tramos.length; i++) {
-    const r = puntoASegmento(p, ruta[i], ruta[i + 1]);
+    const r = puntoASegmento(p, ruta[i]!, ruta[i + 1]!);
     if (r.distancia_m < distancia_m) {
       distancia_m = r.distancia_m;
-      arco = acumulado + r.t * tramos[i];
+      arco = acumulado + r.t * tramos[i]!;
       tramo = i;
     }
-    acumulado += tramos[i];
+    acumulado += tramos[i]!;
   }
   return { distancia_m, fraccion: total === 0 ? 0 : arco / total, tramo };
 }

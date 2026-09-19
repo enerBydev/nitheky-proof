@@ -1,0 +1,46 @@
+# NITHEKY · el stack completo en un `docker compose up`:
+#
+#   db   → PostGIS 18-3.6 (el motor de producción de la propuesta)
+#   app  → el servidor Nitro de Nuxt (la API + las páginas)
+#
+# Tras levantar, sembrar la base (una vez):
+#   docker compose exec -T db psql -U nitheky -d nitheky < sql/00_schema.sql
+#   docker compose exec -T db psql -U nitheky -d nitheky < sql/01_seed.sql
+#   docker compose exec -T db psql -U nitheky -d nitheky < sql/02_matching.sql
+#   docker compose exec -T db psql -U nitheky -d nitheky < sql/03_reserva.sql
+# (docs/REPRODUCIR.md lo explica línea a línea, con los escenarios dentro.)
+#
+# La carrera SQL por la última plaza:
+#   docker compose exec db bash -c "PGPASSWORD=nitheky psql -U nitheky -d nitheky -X -qAt -c \"select reservar_plaza('drv-tomas','ana',1);\" & docker compose exec db bash -c \"...bruno...\""
+# o mejor: DATABASE_URL=postgresql://nitheky:nitheky@localhost:5433/nitheky sql/carrera.sh
+
+services:
+  db:
+    image: postgis/postgis:18-3.6
+    environment:
+      POSTGRES_USER: nitheky
+      POSTGRES_PASSWORD: nitheky
+      POSTGRES_DB: nitheky
+    ports:
+      - "5433:5432"
+    volumes:
+      - nitheky_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nitheky -d nitheky"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://nitheky:nitheky@db:5432/nitheky
+      NITRO_PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  nitheky_pgdata:
