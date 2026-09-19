@@ -23,7 +23,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: preparar (genera .nuxt: tipos y el config de ESLint)
+      - name: "preparar (genera .nuxt: tipos y el config de ESLint)"
         run: pnpm exec nuxi prepare
       - run: pnpm lint
       - run: pnpm typecheck
