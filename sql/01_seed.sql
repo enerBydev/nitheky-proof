@@ -88,7 +88,7 @@ commit;
 
 -- ── Verificación inmediata de la semilla ──────────────────────────────────
 select id,
-       round(st_length(ruta) / 1000, 2) as km_de_ruta,
+       round((st_length(ruta) / 1000)::numeric, 2) as km_de_ruta,
        ventana,
        plazas
 from conductores
