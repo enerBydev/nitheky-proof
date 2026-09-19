@@ -93,3 +93,12 @@ Two real defects were found and fixed during this re-audit round, both by the te
 than by taste: the composable's state was not shared between components (scenarios didn't
 switch — caught by E2E), and the in-memory store was captured statically so re-seeding didn't
 reach live requests (caught by the E2E API suite running two browser projects).
+
+
+---
+
+*Posdata (post-migración): el empaquetado Docker que la v2 trajo entonces fue
+después sustituido por un **flake de Nix** (`flake.nix`) — las mismas
+garantías y una más: el toolchain entero congelado por revisión. Los ficheros
+estáticos de la v1 que esta auditoría examinó (`index.html`, `motor.js`,
+`demo.html`, `web/`) viven solo en el historial git desde entonces.*
